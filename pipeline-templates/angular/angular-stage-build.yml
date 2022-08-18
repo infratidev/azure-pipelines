@@ -1,0 +1,142 @@
+parameters:
+  - name: cliProjectKey
+    type: string
+  - name: cliProjectName
+    type: string
+  - name: cliProjectNameLib
+    type: string
+
+steps:
+    - checkout: self
+      displayName: Checkout - main project
+    - checkout: iris-lib-angular
+      displayName: Checkout - lib-angular dependent project
+      path: 's/lib-angular'
+ 
+    - task: SonarQubePrepare@5
+      displayName: 'Task01 - QA and SAST analysis in code'
+
+      inputs:
+        SonarQube: 'SonarQube_Onpremise'
+        scannerMode: 'CLI'
+        configMode: 'manual'
+        cliProjectKey:  '${{ parameters.cliProjectKey }}'
+        cliProjectName: '${{ parameters.cliProjectName }}'
+        cliSources: '.'
+        extraProperties: '#sonar.verbose=true'
+
+    - task: NodeTool@0
+      displayName: 'Task02 - Install Node.js'
+      inputs:
+        versionSpec: '10.x'
+        checkLatest: true
+      
+    - task: Cache@2
+      displayName: 'Task03 - Cache npm main project'
+      inputs:
+        key: 'v1 | npm | "$(Agent.OS)" | $(Build.SourcesDirectory)/${{ parameters.cliProjectName }}/package.json'
+        path: '$(Build.SourcesDirectory)/${{ parameters.cliProjectName }}/node_modules'
+        restoreKeys: |
+          v1 | npm | "$(Agent.OS)"
+        cacheHitVar: CACHE_RESTORED
+
+    - task: Cache@2
+      displayName: 'Task04 - Cache npm lib angular'
+      inputs:
+        key: 'v1 | npm | "$(Agent.OS)" | $(Build.SourcesDirectory)/${{ parameters.cliProjectNameLib }}/package.json'
+        path: '$(Build.SourcesDirectory)/${{ parameters.cliProjectNameLib }}/node_modules'
+        restoreKeys: |
+          v1 | npm | "$(Agent.OS)"
+        cacheHitVar: CACHE_RESTORED
+
+    - task: Npm@1  
+      displayName: 'Task05 - Angular CLI Installation'  
+      inputs:
+        workingDir: '$(System.DefaultWorkingDirectory)/${{ parameters.cliProjectName }}'  
+        command: custom  
+        verbose: false  
+        customCommand: 'install @angular/cli'        
+
+    - task: Npm@1  
+      displayName: 'Task06 - npm installation main project'
+      condition: ne(variables.CACHE_RESTORED,'true')
+      inputs:
+        workingDir: '$(System.DefaultWorkingDirectory)/${{ parameters.cliProjectName }}'
+        command: 'custom'
+        customCommand: 'install --legacy-peer-deps'
+        
+    - task: Npm@1  
+      displayName: 'Task07 - npm installation in lib'
+      condition: ne(variables.CACHE_RESTORED,'true')
+      inputs:
+        workingDir: '$(System.DefaultWorkingDirectory)/lib-angular'
+        command: 'custom'
+        customCommand: 'install --legacy-peer-deps'
+
+    - task: Npm@1 
+      displayName: 'Task08 - project build'   
+      inputs:  
+        workingDir: '$(System.DefaultWorkingDirectory)/${{ parameters.cliProjectName }}'
+        command: custom  
+        verbose: false  
+        customCommand: run build -- --prod --base-href "./"
+
+    - script: |
+        ls ${{ parameters.cliProjectName }}
+      displayName: 'Task09 - Listing directory after Build'
+    
+    - script: |
+        ls ${{ parameters.cliProjectName }}/dist/* | wc -l
+      displayName: 'Task10 - Listing directory after Build'
+   
+    - task: SonarQubeAnalyze@5
+      displayName: 'Task11 - QA and SAST analysis in code' 
+
+    - task: SonarQubePublish@5
+      displayName: 'Task12 - Deploying reports on SonarQube' 
+      inputs:
+        pollingTimeoutSec: '300'
+    
+    - task: Sonar-buildbreaker@8
+      displayName: 'Task13 - Sonar Quality Gate' 
+      inputs:
+        SonarQube: 'SonarQube_Onpremise'
+    
+    - task: ArchiveFiles@2
+      displayName: 'Task14 - Build archive and zip' 
+      condition: and(succeeded(),or(eq(variables.isHml, 'true'), eq(variables.isMain, 'true')),ne(variables['Build.Reason'],'PullRequest')) 
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)/${{ parameters.cliProjectName }}/dist'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+        replaceExistingArchive: true
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Task15 - Deploy Solution artifact'
+      condition: and(succeeded(),or(eq(variables.isHml, 'true'), eq(variables.isMain, 'true')),ne(variables['Build.Reason'],'PullRequest')) 
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+        ArtifactName: '${{ parameters.cliProjectName }}'
+        publishLocation: 'Container'
+    
+    - task: CreateWorkItem@1
+      displayName: 'Task16 - Create work item on failure' 
+      inputs:
+        teamProject: '$(System.TeamProject)'
+        workItemType: 'Issue'
+        title: '$(System.TeamProject) - Build $(Build.BuildNumber) Failed'
+        assignedTo: '$(Build.RequestedFor) <$(Build.RequestedForEmail)>'
+        fieldMappings: 'Description=Branch: Branch $(Build.SourceBranch) build process fails. Go to Boards WorkItems and check the failure type.'
+        associate: true
+        linkWorkItems: true
+        linkType: 'System.LinkTypes.Hierarchy-Forward'
+        linkTarget: 'associate'
+        linkPR: true
+        preventDuplicates: true
+        keyFields: |
+          System.Title
+          System.State
+        updateDuplicates: true
+        updateRules: 'Tags|=;Build $(Build.BuildNumber)'
+      condition: failed()

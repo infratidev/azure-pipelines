@@ -1,0 +1,270 @@
+parameters:
+  - name: displayName
+    type: string
+  - name: branchOptions
+    displayName: Source branch options
+    type: object
+    default:
+      - refs/heads/main
+
+steps:
+          - task: IISWebAppManagementOnMachineGroup@0
+            displayName: 'Task01 - Setup for Deploy'
+            inputs:
+              IISDeploymentType: '$(Parameters.IISDeploymentType)'
+              ParentWebsiteNameForApplication: '$(Parameters.ParentWebsiteNameForApplication)'
+              WebsiteName: '$(Parameters.WebsiteName)'
+              VirtualPathForApplication: '$(Parameters.VirtualPathForApplication)'
+              PhysicalPathForApplication: '$(Parameters.WebsitePhysicalPath)'
+              CreateOrUpdateAppPoolForApplication: '$(Parameters.CreateOrUpdateAppPoolForApplication)'
+              AppPoolNameForApplication: '$(Parameters.AppPoolName)'
+              DotNetVersionForApplication: '$(Parameters.DotNetVersionForApplication)'
+              PipeLineModeForApplication: '$(Parameters.PipeLineModeForApplication)'
+              AppPoolIdentityForApplication: '$(Parameters.AppPoolIdentityForApplication)'
+              Bindings: false
+              AppPoolNameForWebsite: 
+              ParentWebsiteNameForVD: 
+              VirtualPathForVD: 
+              AppPoolName:
+              AppCmdCommands: '$(Parameters.AppCmdCommands)'
+
+          - task: ExtractFiles@1
+            displayName: 'Task02 - extracting replace files'
+            inputs:
+              archiveFilePatterns: '$(Pipeline.Workspace)/$(Parameters.ProjectName)/*.zip'
+              destinationFolder: '$(Pipeline.Workspace)/$(Parameters.ProjectName)/deploy'
+
+          - task: replacetokens@3
+            displayName: 'Task03 - Replace Tokens'
+            inputs:
+              targetFiles: |
+                $(Pipeline.Workspace)/$(Parameters.ProjectName)/deploy/**/*.config
+                $(Pipeline.Workspace)/$(Parameters.ProjectName)/deploy/**/*.json
+              encoding: 'auto'
+              writeBOM: true
+              verbosity: 'detailed'
+              actionOnMissing: 'warn'
+              keepToken: false
+              tokenPrefix: '#{'
+              tokenSuffix: '}#'
+              useLegacyPattern: false
+              enableTelemetry: true
+
+          - task: ArchiveFiles@2
+            displayName: 'Task04 - Archive after replace' 
+            inputs:
+              rootFolderOrFile: '$(Pipeline.Workspace)/$(Parameters.ProjectName)/deploy'
+              includeRootFolder: false
+              archiveType: 'zip'
+              archiveFile: '$(Pipeline.Workspace)/$(Parameters.ProjectName)/Replaced-$(Parameters.ProjectName)-Build-$(Build.BuildId).zip'
+              replaceExistingArchive: true  
+
+          - task: IISWebAppDeploymentOnMachineGroup@0
+            displayName: '${{ parameters.displayName }}'
+
+            inputs:
+              WebSiteName: '$(Parameters.WebsiteName)'
+              VirtualApplication: '$(Parameters.VirtualApplication)'
+              Package: '$(Pipeline.Workspace)\$(Parameters.ProjectName)\Replaced-$(Parameters.ProjectName)-Build-$(Build.BuildId).zip'
+              TakeAppOfflineFlag: True
+              XmlVariableSubstitution: True
+
+          - task: PowerShell@2
+            name: SmokeTesting
+            displayName: 'Task06 - SmokeTest HTTP Status Code 200'
+
+            inputs:
+              targetType: 'inline'
+              script: |
+                $HTTP_Request = [System.Net.WebRequest]::Create('$(Parameters.URL)')                               
+                $HTTP_Response = $HTTP_Request.GetResponse()
+                $HTTP_Status = [int]$HTTP_Response.StatusCode
+                If ($HTTP_Status -eq 200) {
+                    Write-Host ""
+                    Write-Host "Site OK! HTTP code status: $HTTP_Status"
+                    Write-Host "URL verificada: $(Parameters.URL)"
+                    Write-Host ""
+                }
+                Else {
+                    Write-Host ""
+                    Write-Host "Site FAIL ! HTTP code status: $HTTP_Status"
+                    Write-Host "URL verificada: $(Parameters.URL)"
+                    Write-Host ""
+                }
+                If ($HTTP_Response -eq $null) { }
+                Else { $HTTP_Response.Close() }
+                   
+          - task: XplatGenerateReleaseNotes@3
+            name: GenerateReleaseNotes
+            condition: ${{ containsValue(parameters.branchOptions, variables['Build.SourceBranch']) }}
+            displayName: 'Task07 - Generation of release notes'
+            inputs:
+              outputfile: '$(System.DefaultWorkingDirectory)/releasenotes.md'
+              templateLocation: 'InLine'
+              inlinetemplate: |
+                ## Build {{buildDetails.buildNumber}}
+                * **Branch**: {{buildDetails.sourceBranch}}
+                * **Tags**: {{buildDetails.tags}}
+                * **Completed**: {{buildDetails.finishTime}}
+                * **Previous Build**: {{compareBuildDetails.buildNumber}}
+                
+                ## Associated Pull Requests ({{pullRequests.length}})
+                {{#forEach pullRequests}}
+                * **[{{this.pullRequestId}}]({{replace (replace this.url "_apis/git/repositories" "_git") "pullRequests" "pullRequest"}})** {{this.title}}
+                * Associated Work Items
+                {{#forEach this.associatedWorkitems}}
+                   {{#with (lookup_a_work_item ../../relatedWorkItems this.url)}}
+                    - [{{this.id}}]({{replace this.url "_apis/wit/workItems" "_workitems/edit"}}) - {{lookup this.fields 'System.Title'}}
+                   {{/with}}
+                {{/forEach}}
+                * Associated Commits (this includes commits on the PR source branch not associated directly with the build)
+                {{#forEach this.associatedCommits}}
+                    - [{{this.commitId}}]({{this.remoteUrl}}) -  {{this.comment}}
+                {{/forEach}}
+                {{/forEach}}
+                
+                # Global list of WI with PRs, parents and children
+                {{#forEach this.workItems}}
+                {{#if isFirst}}### WorkItems {{/if}}
+                *  **{{this.id}}**  {{lookup this.fields 'System.Title'}}
+                   - **WIT** {{lookup this.fields 'System.WorkItemType'}}
+                   - **Tags** {{lookup this.fields 'System.Tags'}}
+                   - **Assigned** {{#with (lookup this.fields 'System.AssignedTo')}} {{displayName}} {{/with}}
+                   - **Description** {{{lookup this.fields 'System.Description'}}}
+                   - **PRs**
+                {{#forEach this.relations}}
+                {{#if (contains this.attributes.name 'Pull Request')}}
+                {{#with (lookup_a_pullrequest ../../pullRequests  this.url)}}
+                      - {{this.pullRequestId}} - {{this.title}}
+                {{/with}}
+                {{/if}}
+                {{/forEach}}
+                   - **Parents**
+                {{#forEach this.relations}}
+                {{#if (contains this.attributes.name 'Parent')}}
+                {{#with (lookup_a_work_item ../../relatedWorkItems  this.url)}}
+                      - {{this.id}} - {{lookup this.fields 'System.Title'}}
+                      {{#forEach this.relations}}
+                      {{#if (contains this.attributes.name 'Parent')}}
+                      {{#with (lookup_a_work_item ../../../../relatedWorkItems  this.url)}}
+                         - {{this.id}} - {{lookup this.fields 'System.Title'}}
+                      {{/with}}
+                      {{/if}}
+                      {{/forEach}}
+                {{/with}}
+                {{/if}}
+                {{/forEach}}
+                   - **Children**
+                {{#forEach this.relations}}
+                {{#if (contains this.attributes.name 'Child')}}
+                {{#with (lookup_a_work_item ../../relatedWorkItems  this.url)}}
+                      - {{this.id}} - {{lookup this.fields 'System.Title'}}
+                {{/with}}
+                {{/if}}
+                {{/forEach}}
+                {{/forEach}}
+                
+                # Global list of CS ({{commits.length}})
+                {{#forEach commits}}
+                {{#if isFirst}}### Associated commits{{/if}}
+                * ** ID{{this.id}}**
+                   -  **Message:** {{this.message}}
+                   -  **Commited by:** {{this.author.displayName}}
+                   -  **FileCount:** {{this.changes.length}}
+                {{#forEach this.changes}}
+                      -  **File path (TFVC or TfsGit):** {{this.item.path}}
+                      -  **File filename (GitHub):** {{this.filename}}
+                {{/forEach}}
+                {{/forEach}}
+                
+                ## List of WI returned by WIQL ({{queryWorkItems.length}})
+                {{#forEach queryWorkItems}}
+                *  **{{this.id}}** {{lookup this.fields 'System.Title'}}
+                {{/forEach}}
+                
+                ## Manual Test Plans
+                | Run ID | Name | State | Total Tests | Passed Tests |
+                | --- | --- | --- | --- | --- |
+                {{#forEach manualTests}}
+                | [{{this.id}}]({{this.webAccessUrl}}) | {{this.name}} | {{this.state}} | {{this.totalTests}} | {{this.passedTests}} |
+                {{/forEach}}
+                
+                ## Global list of ConsumedArtifacts ({{consumedArtifacts.length}})
+                | Category | Type | Version Name | Version Id | Commits | Workitems |
+                |-|-|-|-|-|-|
+                {{#forEach consumedArtifacts}}
+                 |{{this.artifactCategory}} | {{this.artifactType}} | {{#if versionName}}{{versionName}}{{/if}} | {{truncate versionId 7}} | {{#if this.commits}} {{this.commits.length}} {{/if}} | {{#if this.workitems}} {{this.workitems.length}} {{/if}} |
+                {{/forEach}}
+              checkStage: true
+              dumpPayloadToConsole: false
+              dumpPayloadToFile: false
+              replaceFile: true
+              getParentsAndChildren: false
+              getAllParents: false
+              getIndirectPullRequests: false
+              stopOnError: false
+              considerPartiallySuccessfulReleases: false
+              checkForManuallyLinkedWI: false
+          
+          - task: WikiUpdaterTask@1
+            condition: ${{ containsValue(parameters.branchOptions, variables['Build.SourceBranch']) }}
+            env:
+              system_accesstoken: $(System.AccessToken)
+            displayName: 'Task08 -  Deploy release notes'
+            inputs:
+              repo: 'dev.azure.com/ORG/Project/_git/Wiki'
+              filename: 'releasenotes/dotnet/$(ProjectName)/Build-$(Build.BuildNumber).md'
+              replaceFile: true
+              dataIsFile: true
+              sourceFile: '$(System.DefaultWorkingDirectory)/releasenotes.md'
+              message: 'Automatically generate release notes for $(ProjectName) project'
+              gitname: '$(Build.RequestedFor)'
+              gitemail: '$(Build.RequestedForEmail)'
+              useAgentToken: true
+              localpath: '$(System.DefaultWorkingDirectory)\repo'
+          
+          - task: XplatGenerateReleaseNotes@3
+            name: ViewWorkitem
+            condition: ${{ containsValue(parameters.branchOptions, variables['Build.SourceBranch']) }}
+            displayName: 'Task09 - Workitems User Story'
+            inputs:
+              outputfile: '$(System.DefaultWorkingDirectory)/workitemview.md'
+              outputVariableName: 'ViewWorkitemPub'
+              templateLocation: 'InLine'
+              inlinetemplate: |
+                {{#forEach workItems}}
+                <b>WID:</b>{{this.id}}<br><b>Deploy description:</b><br>
+                [{{lookup this.fields 'Custom.DescPub'}}]
+                [{{lookup this.fields 'Custom.DescPubFeat'}}]
+                {{/forEach}}
+              checkStage: false
+              dumpPayloadToConsole: false
+              dumpPayloadToFile: false
+              replaceFile: true
+              getParentsAndChildren: false
+              getAllParents: false
+              getIndirectPullRequests: false
+              stopOnError: false
+              considerPartiallySuccessfulReleases: false
+              checkForManuallyLinkedWI: false
+              wiqlFromTarget: 'WorkItems'
+              getPRDetails: false
+              getTestedBy: false
+
+
+          - task: PowerShell@2
+            condition: ${{ containsValue(parameters.branchOptions, variables['Build.SourceBranch']) }}
+            continueOnError: true
+            name: SendEmail
+            displayName: 'Task10 - spreading email'
+
+            inputs:
+              targetType: 'inline'
+              script: |
+                Add-Type -AssemblyName System.Web
+                $StageDecode = [System.Web.HttpUtility]::HtmlDecode("$(ViewWorkitemPub)")
+                $DescPub = $StageDecode.replace('<div>','').replace('</div>','').replace('[','').replace(']','')
+                $date=$(Get-Date -Format dd/MM/yyyy-HH:mm);               
+                Send-MailMessage -To "xxx@xxx.com.br" -From "azuredevops@xxx.com.br" -Subject "$(Parameters.Subject) - $date" -SmtpServer "xxx.xxx.xxx.xxx" -Port xx -BodyAsHtml -Encoding utf8 -Body "$(Parameters.EmailBody) - Date: <b>$date</b><br><br>$DescPub"
+  
+              
