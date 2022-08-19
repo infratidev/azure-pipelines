@@ -3,11 +3,11 @@
 ### 📋 infratidev
 
 ### Contents 
-  - [angular](angular/README.md)
-  - [dotnet](dotnet/README.md)
-  - [pipeline-templates](pipeline-templates/README.md)
-      - [angular](angular/README.md)
-      - [dotnet](dotnet/README.md)
+  - [angular](angular/)
+  - [dotnet](dotnet/)
+  - [pipeline-templates](pipeline-templates/)
+      - [angular](angular/)
+      - [dotnet](dotnet/)
 
 ##### Pipeline AzureDevops realizando o deploy em servidores Web IIS onpremise para as linguagens angular e dotnet
 
