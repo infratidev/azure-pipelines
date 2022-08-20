@@ -9,7 +9,7 @@
       - [angular](angular/)
       - [dotnet](dotnet/)
 
-##### Pipeline AzureDevops realizando o deploy em servidores Web IIS onpremise para as linguagens angular e dotnet
+##### Pipeline MultiStage AzureDevops realizando o deploy em servidores Web IIS onpremise para as linguagens angular e dotnet
 
 ###### Estrutura pricipal para as tecnologias
 
@@ -25,8 +25,6 @@
       - [angular](angular/)
       - [dotnet](dotnet/)
 ```
-
-
 
 <br>
 
