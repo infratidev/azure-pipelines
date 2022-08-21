@@ -6,8 +6,8 @@
   - [angular](angular/)
   - [dotnet](dotnet/)
   - [pipeline-templates](pipeline-templates/)
-      - [angular](angular/)
-      - [dotnet](dotnet/)
+      - [angular](pipeline-templates/angular/)
+      - [dotnet](pipeline-templates/dotnet/)
 
 ##### Pipeline MultiStage AzureDevops realizando o deploy em servidores Web IIS onpremise para as linguagens angular e dotnet
 
