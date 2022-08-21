@@ -2,7 +2,7 @@
 
 #### 📋 infratidev
 
-##### Pipeline AzureDevops para dotnet.
+##### Template Pipeline AzureDevops para angular. Build e Deploy em ambiente onpremise.
 
 <br>
 
