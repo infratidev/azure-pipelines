@@ -2,7 +2,19 @@
 
 #### 📋 infratidev
 
-##### Template Pipeline AzureDevops para dotnet. Build e Deploy em ambiente onpremise.
+##### Templates MultiStage para AzureDevops para Build e Deploy em angular e donet
+
+### Build/QA/SAST
+
+Parametros passados para o ```azure-pipelines.yml```
+
+~~~
+parameters:
+  - name: projectKey
+    type: string
+  - name: projectName
+    type: string
+~~~
 
 <br>
 
