@@ -4,17 +4,10 @@
 
 ##### Templates MultiStage para AzureDevops para Build e Deploy em angular e donet
 
-### Build/QA/SAST
-
-Parametros passados para o ```azure-pipelines.yml```
-
-~~~
-parameters:
-  - name: projectKey
-    type: string
-  - name: projectName
-    type: string
-~~~
+### Contents 
+  - [pipeline-templates](pipeline-templates/)
+      - [angular](pipeline-templates/angular/)
+      - [dotnet](pipeline-templates/dotnet/)
 
 <br>
 
