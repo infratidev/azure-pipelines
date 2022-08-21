@@ -210,4 +210,48 @@ steps:
               gitemail: '$(Build.RequestedForEmail)'
               useAgentToken: true
               localpath: '$(System.DefaultWorkingDirectory)\repo'
-              
+
+          - task: XplatGenerateReleaseNotes@3
+            name: ViewWorkitem
+            condition: ${{ containsValue(parameters.branchOptions, variables['Build.SourceBranch']) }}
+            displayName: 'Task09 - Workitems User Story'
+            inputs:
+              outputfile: '$(System.DefaultWorkingDirectory)/workitemview.md'
+              outputVariableName: 'ViewWorkitemPub'
+              templateLocation: 'InLine'
+              inlinetemplate: |
+                {{#forEach workItems}}
+                <b>WID:</b>{{this.id}}<br><b>Deploy description:</b><br>
+                [{{lookup this.fields 'Custom.DescPub'}}]
+                [{{lookup this.fields 'Custom.DescPubFeat'}}]
+                {{/forEach}}
+              checkStage: false
+              dumpPayloadToConsole: false
+              dumpPayloadToFile: false
+              replaceFile: true
+              getParentsAndChildren: false
+              getAllParents: false
+              getIndirectPullRequests: false
+              stopOnError: false
+              considerPartiallySuccessfulReleases: false
+              checkForManuallyLinkedWI: false
+              wiqlFromTarget: 'WorkItems'
+              getPRDetails: false
+              getTestedBy: false
+
+
+          - task: PowerShell@2
+            condition: ${{ containsValue(parameters.branchOptions, variables['Build.SourceBranch']) }}
+            continueOnError: true
+            name: SendEmail
+            displayName: 'Task10 - spreading email'
+
+            inputs:
+              targetType: 'inline'
+              script: |
+                Add-Type -AssemblyName System.Web
+                $StageDecode = [System.Web.HttpUtility]::HtmlDecode("$(ViewWorkitemPub)")
+                $DescPub = $StageDecode.replace('<div>','').replace('</div>','').replace('[','').replace(']','')
+                $date=$(Get-Date -Format dd/MM/yyyy-HH:mm);               
+                Send-MailMessage -To "xxx@xxx.com.br" -From "azuredevops@xxx.com.br" -Subject "$(Parameters.Subject) - $date" -SmtpServer "xxx.xxx.xxx.xxx" -Port xx -BodyAsHtml -Encoding utf8 -Body "$(Parameters.EmailBody) - Date: <b>$date</b><br><br>$DescPub"
+                
