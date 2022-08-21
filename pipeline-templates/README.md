@@ -6,8 +6,9 @@
 
 ### Contents 
   - [pipeline-templates](pipeline-templates/)
-      - [angular](pipeline-templates/angular/)
-      - [dotnet](pipeline-templates/dotnet/)
+      - [angular](angular/)
+      - [dotnet](dotnet/)
+
 
 <br>
 
